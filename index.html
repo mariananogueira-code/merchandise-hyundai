@@ -47,7 +47,7 @@
             font-size: 12px; 
             font-weight: 600;
         }
-        .badge-admin { background: #FF6B35; color: white; }
+        .badge-admin { background: #02ccfd; color: #003478; }
         .badge-editor { background: #004ca5; color: white; }
         .badge-viewer { background: #666; color: white; }
         .nav-tabs { 
@@ -272,11 +272,11 @@
         }
         .btn-primary:hover { transform: scale(1.02); }
         .btn-danger { 
-            background: #FF6B35; 
-            color: white; 
+            background: #02ccfd; 
+            color: #003478; 
             border: none;
         }
-        .btn-danger:hover { background: #e55a25; }
+        .btn-danger:hover { background: #01b3d9; }
         .btn-success {
             background: #4CAF50;
             color: white;
@@ -840,7 +840,7 @@ function renderizarGrid() {
                     <span class="qty-value">${item.quantidade}</span>
                 </div>
                 <button class="card-btn" onclick="abrirMovimento(${item.id})" ${currentUser.funcao === 'viewer' ? 'disabled' : ''}>Movimentar</button>
-                <button class="card-btn" onclick="abrirEditarItem(${item.id})" ${currentUser.funcao === 'viewer' ? 'disabled' : ''} style="background: linear-gradient(135deg, #FF6B35 0%, #e55a25 100%); margin-top: 4px;">Editar/Apagar</button>
+                <button class="card-btn" onclick="abrirEditarItem(${item.id})" ${currentUser.funcao === 'viewer' ? 'disabled' : ''} style="background: linear-gradient(135deg, #02ccfd 0%, #01b3d9 100%); margin-top: 4px;">Editar/Apagar</button>
             </div>
         `;
         container.appendChild(card);
