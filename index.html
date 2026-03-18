@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Merchandise Hyundai - Plataforma de Gestão</title>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -366,6 +368,82 @@
             background: #E3F2FD;
             color: #1565C0;
         }
+
+        /* Sync status indicator */
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.8);
+            margin-top: 6px;
+        }
+        .sync-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+        .sync-dot.offline { background: #f44336; animation: none; }
+        .sync-dot.syncing { background: #FF9800; animation: pulse 0.5s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Setup overlay */
+        .setup-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,52,120,0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            padding: 2rem;
+        }
+        .setup-box {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .setup-box h2 { color: #003478; margin-bottom: 0.5rem; }
+        .setup-box p { color: #666; margin-bottom: 1.5rem; font-size: 14px; line-height: 1.6; }
+        .setup-box .form-group { margin-bottom: 1.25rem; }
+        .setup-box code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        .setup-step {
+            background: #f8f9ff;
+            border: 1px solid #e0e8ff;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .setup-step strong { color: #003478; }
+        .setup-step-number {
+            display: inline-flex;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #003478;
+            color: white;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            margin-right: 8px;
+        }
+
         @media (max-width: 768px) {
             .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
             .header { flex-direction: column; align-items: flex-start; }
@@ -378,11 +456,58 @@
 </head>
 <body>
 
+<!-- SETUP OVERLAY - shown only when Supabase is not configured -->
+<div id="setupOverlay" class="setup-overlay" style="display: none;">
+    <div class="setup-box">
+        <h2>⚙️ Configurar Supabase</h2>
+        <p>Para que a plataforma funcione em tempo real com múltiplos utilizadores, precisas de configurar o Supabase (gratuito). Segue estes passos:</p>
+        
+        <div class="setup-step">
+            <span class="setup-step-number">1</span>
+            <strong>Criar conta:</strong> Vai a <a href="https://supabase.com" target="_blank">supabase.com</a> e cria uma conta gratuita.
+        </div>
+        
+        <div class="setup-step">
+            <span class="setup-step-number">2</span>
+            <strong>Criar projeto:</strong> Cria um novo projeto (dá-lhe qualquer nome, ex: "merchandise-hyundai").
+        </div>
+        
+        <div class="setup-step">
+            <span class="setup-step-number">3</span>
+            <strong>Criar tabelas:</strong> Vai a <strong>SQL Editor</strong> no menu lateral e cola o SQL que está no ficheiro <code>SETUP_SQL.txt</code> que te foi fornecido. Clica em <strong>Run</strong>.
+        </div>
+        
+        <div class="setup-step">
+            <span class="setup-step-number">4</span>
+            <strong>Copiar credenciais:</strong> Vai a <strong>Settings → API</strong> e copia o <strong>Project URL</strong> e a <strong>anon public key</strong>.
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Project URL</label>
+            <input type="text" class="form-input" id="setupUrl" placeholder="https://xxxxx.supabase.co">
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">Anon Public Key</label>
+            <input type="text" class="form-input" id="setupKey" placeholder="eyJhbGciOiJIUzI1NiIs...">
+        </div>
+
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="salvarConfig()" style="flex: 1;">✅ Guardar e Iniciar</button>
+        </div>
+        <p style="margin-top: 1rem; font-size: 12px; color: #999;">As credenciais ficam guardadas no teu browser. A <code>anon key</code> é pública e segura para uso no frontend.</p>
+    </div>
+</div>
+
 <div class="container">
     <div class="header">
         <div>
             <h1>Merchandise Hyundai</h1>
             <p>Plataforma de gestão colaborativa</p>
+            <div class="sync-status">
+                <div class="sync-dot" id="syncDot"></div>
+                <span id="syncText">A conectar...</span>
+            </div>
         </div>
         <div class="user-info">
             <div class="avatar" id="userAvatar">AC</div>
@@ -418,6 +543,7 @@
         <button class="tab-btn" onclick="mudarTab('categorias', event)" id="tabCategorias" style="display: none;">Categorias</button>
         <button class="tab-btn" onclick="mudarTab('historico', event)">Movimentações</button>
         <button class="tab-btn" onclick="mudarTab('relatorios', event)">Relatórios</button>
+        <button class="tab-btn" onclick="mudarTab('configTab', event)" style="font-size: 12px;">⚙️</button>
     </div>
 
     <div id="inventario" class="tab-content active">
@@ -492,6 +618,26 @@
                 </thead>
                 <tbody id="relatorioTable"></tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Config Tab -->
+    <div id="configTab" class="tab-content">
+        <div style="background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); max-width: 600px;">
+            <h3 style="color: #003478; margin-bottom: 1rem;">⚙️ Configuração Supabase</h3>
+            <div class="form-group">
+                <label class="form-label">Project URL</label>
+                <input type="text" class="form-input" id="configUrl" placeholder="https://xxxxx.supabase.co">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Anon Public Key</label>
+                <input type="text" class="form-input" id="configKey" placeholder="eyJhbGciOiJIUzI1NiIs...">
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="atualizarConfig()">Guardar Configuração</button>
+                <button class="btn btn-danger" onclick="resetarDados()">Resetar Dados Locais</button>
+            </div>
+            <p style="margin-top: 1rem; font-size: 12px; color: #999;">Alterar as credenciais recarregará a página.</p>
         </div>
     </div>
 </div>
@@ -662,56 +808,233 @@
 </div>
 
 <script>
-// Dados iniciais
-const mockUsers = [
-    { id: 1, nome: 'Admin Central', email: 'admin@hyundai.com', funcao: 'admin', ativo: true, dataRegisto: '2024-01-15' },
-    { id: 2, nome: 'João Silva', email: 'joao@hyundai.com', funcao: 'editor', ativo: true, dataRegisto: '2024-02-01' },
-    { id: 3, nome: 'Maria Costa', email: 'maria@hyundai.com', funcao: 'editor', ativo: true, dataRegisto: '2024-02-10' },
-    { id: 4, nome: 'Pedro Santos', email: 'pedro@hyundai.com', funcao: 'viewer', ativo: true, dataRegisto: '2024-03-01' },
-    { id: 5, nome: 'Ana Ferreira', email: 'ana@hyundai.com', funcao: 'editor', ativo: true, dataRegisto: '2024-03-05' },
-];
+// ============================================================
+// SUPABASE CONFIGURATION & REALTIME SYNC
+// ============================================================
 
-const mockCategorias = ['Vestuário', 'Acessórios', 'Decoração'];
+let supabaseClient = null;
+let realtimeChannel = null;
 
-const mockItems = [
-    { id: 1, nome: 'Camiseta Azul', codigo: 'HYU-CAM-001', categoria: 'Vestuário', quantidade: 45, imagem: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', observacoes: '', criado: '2024-01-20', criadoPor: 1 },
-    { id: 2, nome: 'Boné Preto', codigo: 'HYU-BON-001', categoria: 'Vestuário', quantidade: 3, imagem: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', observacoes: '', criado: '2024-01-22', criadoPor: 1 },
-    { id: 3, nome: 'Mochila Vermelha', codigo: 'HYU-MOC-001', categoria: 'Acessórios', quantidade: 12, imagem: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', observacoes: '', criado: '2024-02-01', criadoPor: 2 },
-    { id: 4, nome: 'Garrafa Térmica', codigo: 'HYU-GAR-001', categoria: 'Acessórios', quantidade: 1, imagem: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', observacoes: '', criado: '2024-02-05', criadoPor: 2 },
-    { id: 5, nome: 'Poster Hyundai', codigo: 'HYU-POS-001', categoria: 'Decoração', quantidade: 120, imagem: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', observacoes: '', criado: '2024-02-10', criadoPor: 3 },
-];
-
-const mockHistorico = [
-    { id: 1, dataHora: '2024-03-18 10:30', tipo: 'saida', utilizador: 2, item: 1, quantidade: 5, motivo: 'uso', observacoes: 'Evento de marketing', nomeEvento: '' },
-    { id: 2, dataHora: '2024-03-18 11:15', tipo: 'entrada', utilizador: 3, item: 5, quantidade: 120, motivo: 'compra', observacoes: 'Stock inicial', nomeEvento: '' },
-    { id: 3, dataHora: '2024-03-17 14:45', tipo: 'evento_saida', utilizador: 2, item: 3, quantidade: 2, motivo: 'evento', observacoes: '', nomeEvento: 'Conferência Q1' },
-];
-
-let users = JSON.parse(localStorage.getItem('merchandiseUsers')) || mockUsers;
-let categorias = JSON.parse(localStorage.getItem('merchandiseCategorias')) || mockCategorias;
-let items = JSON.parse(localStorage.getItem('merchandiseItems')) || mockItems;
-
-// Garantir que histórico sempre tem dados
-let historicoArmazenado = localStorage.getItem('merchandiseHistorico');
-let historico = historicoArmazenado ? JSON.parse(historicoArmazenado) : mockHistorico;
-
-// Se ainda assim estiver vazio, usar mockHistorico
-if (!historico || historico.length === 0) {
-    historico = mockHistorico;
+// Load config from localStorage
+function getSupabaseConfig() {
+    return {
+        url: localStorage.getItem('supabase_url') || '',
+        key: localStorage.getItem('supabase_key') || ''
+    };
 }
 
-let currentUser = users[0];
+function salvarConfig() {
+    const url = document.getElementById('setupUrl').value.trim();
+    const key = document.getElementById('setupKey').value.trim();
+    if (!url || !key) { alert('Preenche ambos os campos.'); return; }
+    localStorage.setItem('supabase_url', url);
+    localStorage.setItem('supabase_key', key);
+    location.reload();
+}
+
+function atualizarConfig() {
+    const url = document.getElementById('configUrl').value.trim();
+    const key = document.getElementById('configKey').value.trim();
+    if (!url || !key) { alert('Preenche ambos os campos.'); return; }
+    localStorage.setItem('supabase_url', url);
+    localStorage.setItem('supabase_key', key);
+    location.reload();
+}
+
+function resetarDados() {
+    if (confirm('Isto vai limpar a configuração local. Os dados no Supabase mantêm-se. Continuar?')) {
+        localStorage.removeItem('supabase_url');
+        localStorage.removeItem('supabase_key');
+        location.reload();
+    }
+}
+
+function setSyncStatus(status, text) {
+    const dot = document.getElementById('syncDot');
+    const txt = document.getElementById('syncText');
+    dot.className = 'sync-dot' + (status === 'online' ? '' : status === 'offline' ? ' offline' : ' syncing');
+    txt.textContent = text;
+}
+
+// ============================================================
+// DATA - starts empty, loaded from Supabase
+// ============================================================
+
+let users = [];
+let categorias = [];
+let items = [];
+let historico = [];
+let currentUser = null;
 let itemEmEdicao = null;
 let itemEmMovimento = null;
 let userEmEdicao = null;
 let imagemSelecionada = null;
 
-// Função para guardar histórico também
-function salvarDados() {
-    localStorage.setItem('merchandiseUsers', JSON.stringify(users));
-    localStorage.setItem('merchandiseItems', JSON.stringify(items));
-    localStorage.setItem('merchandiseCategorias', JSON.stringify(categorias));
-    localStorage.setItem('merchandiseHistorico', JSON.stringify(historico));
+// ============================================================
+// SUPABASE CRUD OPERATIONS
+// ============================================================
+
+async function carregarTodosDados() {
+    setSyncStatus('syncing', 'A sincronizar...');
+    try {
+        const [usersRes, itemsRes, categoriasRes, historicoRes] = await Promise.all([
+            supabaseClient.from('users').select('*').order('id'),
+            supabaseClient.from('items').select('*').order('id'),
+            supabaseClient.from('categorias').select('*').order('id'),
+            supabaseClient.from('historico').select('*').order('created_at', { ascending: false })
+        ]);
+
+        if (usersRes.error) throw usersRes.error;
+        if (itemsRes.error) throw itemsRes.error;
+        if (categoriasRes.error) throw categoriasRes.error;
+        if (historicoRes.error) throw historicoRes.error;
+
+        users = usersRes.data || [];
+        items = itemsRes.data || [];
+        categorias = (categoriasRes.data || []).map(c => c.nome);
+        historico = (historicoRes.data || []).map(h => ({
+            id: h.id,
+            dataHora: h.data_hora,
+            tipo: h.tipo,
+            utilizador: h.utilizador_id,
+            item: h.item_id,
+            quantidade: h.quantidade,
+            motivo: h.motivo || '',
+            observacoes: h.observacoes || '',
+            nomeEvento: h.nome_evento || ''
+        }));
+
+        // Set current user
+        currentUser = users.length > 0 ? users[0] : { id: 0, nome: 'Admin', email: 'admin@hyundai.com', funcao: 'admin', ativo: true };
+        
+        setSyncStatus('online', 'Sincronizado em tempo real');
+        renderizarTudo();
+    } catch (err) {
+        console.error('Erro ao carregar dados:', err);
+        setSyncStatus('offline', 'Erro de conexão');
+        alert('Erro ao conectar ao Supabase. Verifica as credenciais em ⚙️ Configuração.');
+    }
+}
+
+async function inserirItemSupabase(item) {
+    setSyncStatus('syncing', 'A guardar...');
+    const { data, error } = await supabaseClient.from('items').insert({
+        nome: item.nome,
+        codigo: item.codigo,
+        categoria: item.categoria,
+        quantidade: item.quantidade,
+        imagem: item.imagem,
+        observacoes: item.observacoes || '',
+        criado_por: currentUser.id
+    }).select().single();
+    if (error) { alert('Erro ao guardar: ' + error.message); setSyncStatus('offline', 'Erro'); return null; }
+    setSyncStatus('online', 'Sincronizado em tempo real');
+    return data;
+}
+
+async function atualizarItemSupabase(id, campos) {
+    setSyncStatus('syncing', 'A guardar...');
+    const { error } = await supabaseClient.from('items').update(campos).eq('id', id);
+    if (error) { alert('Erro ao atualizar: ' + error.message); setSyncStatus('offline', 'Erro'); return false; }
+    setSyncStatus('online', 'Sincronizado em tempo real');
+    return true;
+}
+
+async function apagarItemSupabase(id) {
+    setSyncStatus('syncing', 'A apagar...');
+    const { error } = await supabaseClient.from('items').delete().eq('id', id);
+    if (error) { alert('Erro ao apagar: ' + error.message); setSyncStatus('offline', 'Erro'); return false; }
+    setSyncStatus('online', 'Sincronizado em tempo real');
+    return true;
+}
+
+async function inserirMovimentoSupabase(mov) {
+    setSyncStatus('syncing', 'A registar...');
+    const { data, error } = await supabaseClient.from('historico').insert({
+        data_hora: mov.dataHora,
+        tipo: mov.tipo,
+        utilizador_id: mov.utilizador,
+        item_id: mov.item,
+        quantidade: mov.quantidade,
+        motivo: mov.motivo || '',
+        observacoes: mov.observacoes || '',
+        nome_evento: mov.nomeEvento || ''
+    }).select().single();
+    if (error) { alert('Erro ao registar movimento: ' + error.message); setSyncStatus('offline', 'Erro'); return null; }
+    setSyncStatus('online', 'Sincronizado em tempo real');
+    return data;
+}
+
+async function inserirUserSupabase(user) {
+    setSyncStatus('syncing', 'A guardar...');
+    const { data, error } = await supabaseClient.from('users').insert({
+        nome: user.nome,
+        email: user.email,
+        funcao: user.funcao,
+        ativo: user.ativo
+    }).select().single();
+    if (error) { alert('Erro ao guardar: ' + error.message); setSyncStatus('offline', 'Erro'); return null; }
+    setSyncStatus('online', 'Sincronizado em tempo real');
+    return data;
+}
+
+async function atualizarUserSupabase(id, campos) {
+    const { error } = await supabaseClient.from('users').update(campos).eq('id', id);
+    if (error) { alert('Erro ao atualizar: ' + error.message); return false; }
+    return true;
+}
+
+async function apagarUserSupabase(id) {
+    const { error } = await supabaseClient.from('users').delete().eq('id', id);
+    if (error) { alert('Erro ao apagar: ' + error.message); return false; }
+    return true;
+}
+
+async function inserirCategoriaSupabase(nome) {
+    const { data, error } = await supabaseClient.from('categorias').insert({ nome }).select().single();
+    if (error) { alert('Erro ao adicionar: ' + error.message); return null; }
+    return data;
+}
+
+async function apagarCategoriaSupabase(nome) {
+    const { error } = await supabaseClient.from('categorias').delete().eq('nome', nome);
+    if (error) { alert('Erro ao apagar: ' + error.message); return false; }
+    return true;
+}
+
+// ============================================================
+// REALTIME SUBSCRIPTIONS
+// ============================================================
+
+function iniciarRealtime() {
+    realtimeChannel = supabaseClient
+        .channel('all-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, () => {
+            carregarTodosDados();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'historico' }, () => {
+            carregarTodosDados();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+            carregarTodosDados();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'categorias' }, () => {
+            carregarTodosDados();
+        })
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                setSyncStatus('online', 'Sincronizado em tempo real');
+            } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                setSyncStatus('offline', 'Desconectado');
+            }
+        });
+}
+
+// ============================================================
+// RENDER FUNCTIONS (same as original)
+// ============================================================
+
+function renderizarTudo() {
     atualizarStats();
     renderizarGrid();
     renderizarHistorico();
@@ -719,32 +1042,25 @@ function salvarDados() {
     renderizarUtilizadores();
     renderizarCategorias();
     atualizarSelectCategorias();
+    mostrarAbasAdmin();
+    atualizarInfoUser();
 }
 
-function inicializar() {
-    salvarDados();
-    mostrarAbasAdmin();
+function atualizarInfoUser() {
+    if (!currentUser) return;
+    document.getElementById('userAvatar').textContent = currentUser.nome.substring(0, 2).toUpperCase();
+    document.getElementById('userName').textContent = currentUser.nome;
+    const badgeClass = currentUser.funcao === 'admin' ? 'badge-admin' : currentUser.funcao === 'editor' ? 'badge-editor' : 'badge-viewer';
+    document.getElementById('userRole').className = `badge ${badgeClass}`;
+    document.getElementById('userRole').textContent = currentUser.funcao.charAt(0).toUpperCase() + currentUser.funcao.slice(1);
 }
 
 function mostrarAbasAdmin() {
-    if (currentUser.funcao === 'admin') {
+    if (currentUser && currentUser.funcao === 'admin') {
         document.getElementById('tabCategorias').style.display = 'block';
     } else {
         document.getElementById('tabCategorias').style.display = 'none';
     }
-}
-
-function salvarDados() {
-    localStorage.setItem('merchandiseUsers', JSON.stringify(users));
-    localStorage.setItem('merchandiseItems', JSON.stringify(items));
-    localStorage.setItem('merchandiseCategorias', JSON.stringify(categorias));
-    atualizarStats();
-    renderizarGrid();
-    renderizarHistorico();
-    renderizarRelatorio();
-    renderizarUtilizadores();
-    renderizarCategorias();
-    atualizarSelectCategorias();
 }
 
 function atualizarSelectCategorias() {
@@ -781,7 +1097,7 @@ function atualizarStats() {
     document.getElementById('statCritico').textContent = items.filter(i => i.quantidade < 2).length;
     
     const hoje = new Date().toISOString().split('T')[0];
-    const movimentosHoje = historico.filter(h => h.dataHora.includes(hoje)).length;
+    const movimentosHoje = historico.filter(h => h.dataHora && h.dataHora.includes(hoje)).length;
     document.getElementById('statMovimentos').textContent = movimentosHoje;
 }
 
@@ -792,7 +1108,7 @@ function renderizarGrid() {
     const searchTerm = document.getElementById('searchInput').value.toLowerCase();
     const categoryFilter = document.getElementById('categoryFilter').value;
 
-    if (currentUser.funcao === 'admin' || currentUser.funcao === 'editor') {
+    if (currentUser && (currentUser.funcao === 'admin' || currentUser.funcao === 'editor')) {
         document.getElementById('btnNovo').style.display = 'inline-block';
     } else {
         document.getElementById('btnNovo').style.display = 'none';
@@ -824,9 +1140,11 @@ function renderizarGrid() {
             statusText = 'CRÍTICO';
         }
 
+        const isViewer = currentUser && currentUser.funcao === 'viewer';
+
         card.innerHTML = `
             <div class="card-image">
-                <img src="${item.imagem}" alt="${item.nome}">
+                <img src="${item.imagem || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='}" alt="${item.nome}">
             </div>
             <div class="card-content">
                 <p class="card-title">${item.nome}</p>
@@ -839,8 +1157,8 @@ function renderizarGrid() {
                     <span class="qty-label">Qtd:</span>
                     <span class="qty-value">${item.quantidade}</span>
                 </div>
-                <button class="card-btn" onclick="abrirMovimento(${item.id})" ${currentUser.funcao === 'viewer' ? 'disabled' : ''}>Movimentar</button>
-                <button class="card-btn" onclick="abrirEditarItem(${item.id})" ${currentUser.funcao === 'viewer' ? 'disabled' : ''} style="background: linear-gradient(135deg, #02ccfd 0%, #01b3d9 100%); margin-top: 4px;">Editar/Apagar</button>
+                <button class="card-btn" onclick="abrirMovimento(${item.id})" ${isViewer ? 'disabled' : ''}>Movimentar</button>
+                <button class="card-btn" onclick="abrirEditarItem(${item.id})" ${isViewer ? 'disabled' : ''} style="background: linear-gradient(135deg, #02ccfd 0%, #01b3d9 100%); margin-top: 4px;">Editar/Apagar</button>
             </div>
         `;
         container.appendChild(card);
@@ -850,6 +1168,10 @@ function renderizarGrid() {
 function filtrarItems() {
     renderizarGrid();
 }
+
+// ============================================================
+// MOVIMENTAÇÕES
+// ============================================================
 
 function abrirMovimento(itemId) {
     if (currentUser.funcao === 'viewer') {
@@ -900,48 +1222,40 @@ function decrementarQtdMov() {
     if (current > 1) document.getElementById('qtdMovimento').value = current - 1;
 }
 
-function guardarMovimento() {
+async function guardarMovimento() {
     let tipo = document.getElementById('tipoMovAtual').value;
     const qtd = parseInt(document.getElementById('qtdMovimento').value);
     const motivo = document.getElementById('motivoMovimento').value;
     const obs = document.getElementById('observacaoMovimento').value;
     const nomeEvento = document.getElementById('nomeEvento').value;
 
-    if (!tipo) {
-        alert('Selecione o tipo de movimentação');
-        return;
-    }
+    if (!tipo) { alert('Selecione o tipo de movimentação'); return; }
+    if (tipo === 'evento' && !nomeEvento) { alert('Preencha o nome do evento'); return; }
+    if (qtd <= 0) { alert('A quantidade deve ser maior que 0'); return; }
 
-    if (tipo === 'evento' && !nomeEvento) {
-        alert('Preencha o nome do evento');
-        return;
-    }
-
-    if (qtd <= 0) {
-        alert('A quantidade deve ser maior que 0');
-        return;
-    }
-
-    if ((tipo === 'saida' || tipo === 'evento') && itemEmMovimento.quantidade < qtd) {
-        alert('Quantidade insuficiente no stock');
-        return;
-    }
+    let novaQtd = itemEmMovimento.quantidade;
 
     if (tipo === 'entrada') {
-        itemEmMovimento.quantidade += qtd;
+        novaQtd += qtd;
     } else if (tipo === 'saida') {
-        itemEmMovimento.quantidade -= qtd;
+        if (novaQtd < qtd) { alert('Quantidade insuficiente no stock'); return; }
+        novaQtd -= qtd;
     } else if (tipo === 'evento') {
-        itemEmMovimento.quantidade -= qtd;
+        if (novaQtd < qtd) { alert('Quantidade insuficiente no stock'); return; }
+        novaQtd -= qtd;
         tipo = 'evento_saida';
     } else if (tipo === 'devolucao') {
-        itemEmMovimento.quantidade += qtd;
+        novaQtd += qtd;
         tipo = 'evento_entrada';
     }
 
+    // Update item quantity in Supabase
+    const atualizado = await atualizarItemSupabase(itemEmMovimento.id, { quantidade: novaQtd });
+    if (!atualizado) return;
+
+    // Insert movement record
     const agora = new Date().toISOString().split('T')[0] + ' ' + new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-    historico.unshift({
-        id: Math.max(...historico.map(h => h.id || 0), 0) + 1,
+    await inserirMovimentoSupabase({
         dataHora: agora,
         tipo: tipo,
         utilizador: currentUser.id,
@@ -952,10 +1266,14 @@ function guardarMovimento() {
         nomeEvento: nomeEvento || ''
     });
 
-    salvarDados();
     fecharModal('modalMovimento');
     alert('Movimentação registada com sucesso!');
+    await carregarTodosDados();
 }
+
+// ============================================================
+// ITEMS CRUD
+// ============================================================
 
 function handleDrop(e) {
     e.preventDefault();
@@ -987,12 +1305,10 @@ function handleImageFile(file) {
         alert('Por favor, selecione um arquivo de imagem válido');
         return;
     }
-
     if (file.size > 5 * 1024 * 1024) {
         alert('Imagem muito grande. Máximo 5MB');
         return;
     }
-
     const reader = new FileReader();
     reader.onload = function(e) {
         imagemSelecionada = e.target.result;
@@ -1029,10 +1345,10 @@ function abrirEditarItem(itemId) {
     document.getElementById('itemCodigo').value = itemEmEdicao.codigo;
     document.getElementById('itemCategoria').value = itemEmEdicao.categoria;
     document.getElementById('itemQuantidade').value = itemEmEdicao.quantidade;
-    document.getElementById('itemObservacoes').value = itemEmEdicao.observacoes;
+    document.getElementById('itemObservacoes').value = itemEmEdicao.observacoes || '';
     imagemSelecionada = null;
     document.getElementById('imagePreview').style.display = 'block';
-    document.getElementById('previewImg').src = itemEmEdicao.imagem;
+    document.getElementById('previewImg').src = itemEmEdicao.imagem || '';
     document.getElementById('btnApagarItem').style.display = 'inline-block';
     document.getElementById('modalItem').classList.add('show');
 }
@@ -1041,56 +1357,54 @@ function fecharModal(modalId) {
     document.getElementById(modalId).classList.remove('show');
 }
 
-function guardarItem() {
+async function guardarItem() {
     const nome = document.getElementById('itemNome').value.trim();
     const codigo = document.getElementById('itemCodigo').value.trim();
     
-    if (!nome || !codigo) {
-        alert('Preencha nome e código');
-        return;
-    }
-
-    if (!imagemSelecionada && !itemEmEdicao) {
-        alert('Por favor, selecione uma imagem');
-        return;
-    }
+    if (!nome || !codigo) { alert('Preencha nome e código'); return; }
+    if (!imagemSelecionada && !itemEmEdicao) { alert('Por favor, selecione uma imagem'); return; }
 
     if (itemEmEdicao) {
-        itemEmEdicao.nome = nome;
-        itemEmEdicao.codigo = codigo;
-        itemEmEdicao.categoria = document.getElementById('itemCategoria').value;
-        itemEmEdicao.quantidade = parseInt(document.getElementById('itemQuantidade').value) || 0;
-        if (imagemSelecionada) itemEmEdicao.imagem = imagemSelecionada;
-        itemEmEdicao.observacoes = document.getElementById('itemObservacoes').value;
+        const campos = {
+            nome,
+            codigo,
+            categoria: document.getElementById('itemCategoria').value,
+            quantidade: parseInt(document.getElementById('itemQuantidade').value) || 0,
+            observacoes: document.getElementById('itemObservacoes').value
+        };
+        if (imagemSelecionada) campos.imagem = imagemSelecionada;
+        
+        await atualizarItemSupabase(itemEmEdicao.id, campos);
         alert('Item atualizado com sucesso!');
     } else {
-        items.push({
-            id: Math.max(...items.map(i => i.id), 0) + 1,
+        await inserirItemSupabase({
             nome,
             codigo,
             categoria: document.getElementById('itemCategoria').value,
             quantidade: parseInt(document.getElementById('itemQuantidade').value) || 0,
             imagem: imagemSelecionada,
-            observacoes: document.getElementById('itemObservacoes').value,
-            criado: new Date().toISOString().split('T')[0],
-            criadoPor: currentUser.id
+            observacoes: document.getElementById('itemObservacoes').value
         });
         alert('Item criado com sucesso!');
     }
 
-    salvarDados();
     fecharModal('modalItem');
     imagemSelecionada = null;
+    await carregarTodosDados();
 }
 
-function apagarItemAtual() {
+async function apagarItemAtual() {
     if (confirm('Tem certeza que deseja apagar este item?')) {
-        items = items.filter(i => i.id !== itemEmEdicao.id);
-        salvarDados();
+        await apagarItemSupabase(itemEmEdicao.id);
         fecharModal('modalItem');
         alert('Item apagado com sucesso!');
+        await carregarTodosDados();
     }
 }
+
+// ============================================================
+// UTILIZADORES
+// ============================================================
 
 function renderizarUtilizadores() {
     const container = document.getElementById('utilizadoresContainer');
@@ -1115,12 +1429,12 @@ function renderizarUtilizadores() {
             </div>
             <span class="badge ${badgeClass}" style="margin-right: 1rem;">${user.funcao.charAt(0).toUpperCase() + user.funcao.slice(1)}</span>
             <button class="btn" onclick="copiarLink(${user.id})" style="padding: 0.5rem 0.75rem; font-size: 13px;">Copiar Link</button>
-            <button class="btn" onclick="abrirEditarUtilizador(${user.id})" ${currentUser.funcao !== 'admin' ? 'style="display: none;"' : ''} style="padding: 0.5rem 0.75rem; font-size: 13px;">Editar</button>
+            <button class="btn" onclick="abrirEditarUtilizador(${user.id})" ${currentUser && currentUser.funcao !== 'admin' ? 'style="display: none;"' : ''} style="padding: 0.5rem 0.75rem; font-size: 13px;">Editar</button>
         `;
         container.appendChild(userDiv);
     });
 
-    if (currentUser.funcao === 'admin') {
+    if (currentUser && currentUser.funcao === 'admin') {
         document.getElementById('btnNovoUser').style.display = 'inline-block';
     } else {
         document.getElementById('btnNovoUser').style.display = 'none';
@@ -1149,45 +1463,46 @@ function abrirEditarUtilizador(userId) {
     document.getElementById('modalUtilizador').classList.add('show');
 }
 
-function guardarUtilizador() {
+async function guardarUtilizador() {
     const nome = document.getElementById('inputUserNome').value.trim();
     const email = document.getElementById('inputUserEmail').value.trim();
     
-    if (!nome || !email) {
-        alert('Preencha nome e email');
-        return;
-    }
+    if (!nome || !email) { alert('Preencha nome e email'); return; }
 
     if (userEmEdicao) {
-        userEmEdicao.nome = nome;
-        userEmEdicao.email = email;
-        userEmEdicao.funcao = document.getElementById('inputUserRole').value;
-        userEmEdicao.ativo = document.getElementById('inputUserAtivo').checked;
-        alert('Utilizador atualizado com sucesso!');
-    } else {
-        users.push({
-            id: Math.max(...users.map(u => u.id), 0) + 1,
+        await atualizarUserSupabase(userEmEdicao.id, {
             nome,
             email,
             funcao: document.getElementById('inputUserRole').value,
-            ativo: document.getElementById('inputUserAtivo').checked,
-            dataRegisto: new Date().toISOString().split('T')[0]
+            ativo: document.getElementById('inputUserAtivo').checked
+        });
+        alert('Utilizador atualizado com sucesso!');
+    } else {
+        await inserirUserSupabase({
+            nome,
+            email,
+            funcao: document.getElementById('inputUserRole').value,
+            ativo: document.getElementById('inputUserAtivo').checked
         });
         alert('Utilizador criado com sucesso!');
     }
 
-    salvarDados();
     fecharModal('modalUtilizador');
+    await carregarTodosDados();
 }
 
-function apagarUtilizadorAtual() {
+async function apagarUtilizadorAtual() {
     if (confirm('Tem certeza que deseja apagar este utilizador?')) {
-        users = users.filter(u => u.id !== userEmEdicao.id);
-        salvarDados();
+        await apagarUserSupabase(userEmEdicao.id);
         fecharModal('modalUtilizador');
         alert('Utilizador apagado com sucesso!');
+        await carregarTodosDados();
     }
 }
+
+// ============================================================
+// CATEGORIAS
+// ============================================================
 
 function renderizarCategorias() {
     const container = document.getElementById('categoriasContainer');
@@ -1212,27 +1527,20 @@ function renderizarCategorias() {
     });
 }
 
-function adicionarCategoria() {
+async function adicionarCategoria() {
     const input = document.getElementById('novaCategoria');
     const nova = input.value.trim();
 
-    if (!nova) {
-        alert('Digite o nome da categoria');
-        return;
-    }
+    if (!nova) { alert('Digite o nome da categoria'); return; }
+    if (categorias.includes(nova)) { alert('Essa categoria já existe'); return; }
 
-    if (categorias.includes(nova)) {
-        alert('Essa categoria já existe');
-        return;
-    }
-
-    categorias.push(nova);
+    await inserirCategoriaSupabase(nova);
     input.value = '';
-    salvarDados();
     alert('Categoria adicionada com sucesso!');
+    await carregarTodosDados();
 }
 
-function apagarCategoria(catName) {
+async function apagarCategoria(catName) {
     const count = items.filter(i => i.categoria === catName).length;
     if (count > 0) {
         alert(`Não pode apagar uma categoria com ${count} item${count !== 1 ? 's' : ''}. Mova ou apague os items primeiro.`);
@@ -1240,11 +1548,15 @@ function apagarCategoria(catName) {
     }
 
     if (confirm(`Tem certeza que deseja apagar a categoria "${catName}"?`)) {
-        categorias = categorias.filter(c => c !== catName);
-        salvarDados();
+        await apagarCategoriaSupabase(catName);
         alert('Categoria apagada com sucesso!');
+        await carregarTodosDados();
     }
 }
+
+// ============================================================
+// HISTÓRICO & RELATÓRIOS
+// ============================================================
 
 function mostrarTodasMovimentacoes() {
     const tbody = document.getElementById('historicoTable');
@@ -1255,22 +1567,19 @@ function mostrarTodasMovimentacoes() {
 function mostrarApenasSaidas() {
     const tbody = document.getElementById('historicoTable');
     tbody.innerHTML = '';
-    const filtrado = historico.filter(h => h.tipo === 'saida');
-    renderizarMovimentacoes(filtrado);
+    renderizarMovimentacoes(historico.filter(h => h.tipo === 'saida'));
 }
 
 function mostrarApenasEntradas() {
     const tbody = document.getElementById('historicoTable');
     tbody.innerHTML = '';
-    const filtrado = historico.filter(h => h.tipo === 'entrada');
-    renderizarMovimentacoes(filtrado);
+    renderizarMovimentacoes(historico.filter(h => h.tipo === 'entrada'));
 }
 
 function mostrarApenasEventos() {
     const tbody = document.getElementById('historicoTable');
     tbody.innerHTML = '';
-    const filtrado = historico.filter(h => h.tipo === 'evento_saida' || h.tipo === 'evento_entrada');
-    renderizarMovimentacoes(filtrado);
+    renderizarMovimentacoes(historico.filter(h => h.tipo === 'evento_saida' || h.tipo === 'evento_entrada'));
 }
 
 function renderizarMovimentacoes(dados) {
@@ -1281,12 +1590,6 @@ function renderizarMovimentacoes(dados) {
         return;
     }
 
-    // Ordenar por data decrescente
-    dados.sort(function(a, b) {
-        return new Date(b.dataHora.replace(' ', 'T')) - new Date(a.dataHora.replace(' ', 'T'));
-    });
-
-    // Renderizar cada movimento
     dados.forEach(function(h) {
         const user = users.find(function(u) { return u.id === h.utilizador; });
         const item = items.find(function(i) { return i.id === h.item; });
@@ -1317,17 +1620,8 @@ function renderizarMovimentacoes(dados) {
     });
 }
 
-function filtrarHistorico() {
-    // Mantém compatibilidade
-    mostrarTodasMovimentacoes();
-}
-
 function renderizarHistorico() {
     mostrarTodasMovimentacoes();
-}
-
-function filtrarHistorico() {
-    renderizarHistorico();
 }
 
 function renderizarRelatorio() {
@@ -1352,6 +1646,10 @@ function renderizarRelatorio() {
         tbody.appendChild(tr);
     });
 }
+
+// ============================================================
+// TABS, EXPORT, LINKS
+// ============================================================
 
 function mudarTab(tabName, event) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -1389,7 +1687,6 @@ function exportarJSON() {
 function gerarLinkUtilizador(userId) {
     const user = users.find(u => u.id === userId);
     if (!user) return '';
-    
     const token = btoa(user.id + user.email);
     const baseURL = window.location.origin + window.location.pathname;
     return `${baseURL}?user=${userId}&token=${token}`;
@@ -1415,21 +1712,54 @@ function carregarUtilizadorPorURL() {
             const tokenValido = btoa(user.id + user.email) === userToken;
             if (tokenValido) {
                 currentUser = user;
-                document.getElementById('userAvatar').textContent = currentUser.nome.substring(0, 2).toUpperCase();
-                document.getElementById('userName').textContent = currentUser.nome;
-                const badgeClass = currentUser.funcao === 'admin' ? 'badge-admin' : currentUser.funcao === 'editor' ? 'badge-editor' : 'badge-viewer';
-                document.getElementById('userRole').className = `badge ${badgeClass}`;
-                document.getElementById('userRole').textContent = currentUser.funcao.charAt(0).toUpperCase() + currentUser.funcao.slice(1);
+                atualizarInfoUser();
                 mostrarAbasAdmin();
-                salvarDados();
             }
         }
     }
 }
 
-// Inicializar
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
+async function inicializar() {
+    const config = getSupabaseConfig();
+    
+    // Show config tab values
+    if (document.getElementById('configUrl')) {
+        document.getElementById('configUrl').value = config.url;
+        document.getElementById('configKey').value = config.key;
+    }
+
+    if (!config.url || !config.key) {
+        // Show setup overlay
+        document.getElementById('setupOverlay').style.display = 'flex';
+        setSyncStatus('offline', 'Não configurado');
+        return;
+    }
+
+    try {
+        // Initialize Supabase client
+        supabaseClient = supabase.createClient(config.url, config.key);
+        
+        // Load all data
+        await carregarTodosDados();
+        
+        // Check URL for user login
+        carregarUtilizadorPorURL();
+        
+        // Start realtime subscriptions
+        iniciarRealtime();
+        
+    } catch (err) {
+        console.error('Erro na inicialização:', err);
+        setSyncStatus('offline', 'Erro de conexão');
+    }
+}
+
+// Start the app
 inicializar();
-carregarUtilizadorPorURL();
 </script>
 
 </body>
